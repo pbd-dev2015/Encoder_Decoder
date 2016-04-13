@@ -1,0 +1,11 @@
+Steps for Encoder
+1) Get Sample RGB image.
+      a. What are the critera?
+2) Convert RGB to YUV
+3) Go through the JPEG encoding process
+      a. DCT
+      b. Quantization
+      c. Run length coding of DCT coefficient (intermediate form)
+      d. Variable Length Integer code
+4) Putting encoded data into JPEG format
+      a. Steps for this?
