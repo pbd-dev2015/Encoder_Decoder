@@ -4,7 +4,7 @@ TARGET = endec
 
 SRCDIR	= code/src
 INCDIR	= code/include
-OBJDIR	= bin
+OBJDIR	= obj
 BINDIR	= bin
 
 CC = gcc
@@ -16,7 +16,7 @@ LINKER = $(CC) -o
 SOURCES	:= $(wildcard $(SRCDIR)/*.c)
 INCLUDES	:= $(wildcard $(INCDIR)/*.h)
 OBJECTS	:= $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
-RM	= rm -f
+RM	= rm -rf
 
 # typing 'make' will invoke the first target entry in the file 
 #all: $(TARGET)
@@ -31,10 +31,16 @@ $(BINDIR)/$(TARGET): $(OBJECTS)
 
 #$<: the name of the prerequisite of the rule
 # For example, we do gcc -g -Wall -c helloworld.c -o helloworld.o
-$(OBJECTS): $(OBJDIR)/%.o : $(SRCDIR)/%.c
+# for "| $(OBJDIR)", see http://stackoverflow.com/a/6170280. It is to create the bin and obj directories before actually compiling.
+$(OBJECTS): $(OBJDIR)/%.o : $(SRCDIR)/%.c | $(OBJDIR)
 	@$(CC) $(CFLAGS) -c $< -o $@
 	@echo "Compiled "$<" successfully."
 
+#we don't use mkdir -p commands because the official documentation says so. http://www.gnu.org/s/hello/manual/make/Utilities-in-Makefiles.html and http://stackoverflow.com/questions/99132/how-to-prevent-directory-already-exists-error-in-a-makefile-when-using-mkdir#comment10617472_99174
+$(OBJDIR):
+	test -d $(OBJDIR) || mkdir $(OBJDIR)
+	test -d $(BINDIR) || mkdir $(BINDIR)
+
 clean:
-	@$(RM) $(BINDIR)/$(TARGET)
-	@$(RM) $(OBJECTS)
+	@$(RM) $(BINDIR)
+	@$(RM) $(OBJDIR)

@@ -1,11 +1,13 @@
 #include "rgb_ycbcr.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 
 #define TXT_VALUES 0
 
 void rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_filename, const char* y_filename, const char* cb_filename, const char* cr_filename)
 {
+	//can be called like this : rgb_to_ycbcr("lena.r", "len.grn", "lena.blu", "lena.y", "lena.cb", "lena.cr");
 	//we will open the files and then just go through all the channels at once. If any channel ends, we stop the whole conversion. We hope for our sanity that all channels are of same length and width
 	FILE *fp_red, *fp_grn, *fp_blu, *fp_y, *fp_cb, *fp_cr;
 	fp_red = fopen(r_filename, "r");
@@ -15,6 +17,7 @@ void rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_
 	fp_blu = fopen(b_filename, "r");
 	if( NULL == fp_blu ) { printf("In file %s:%d:%s: Error opening the blue channel\n",__FILE__,__LINE__,__FUNCTION__); exit(0); }
 	
+	//truncate files if already present. create if not.
 	fp_y = fopen(y_filename, "w+");
 	if( NULL == fp_y  ) { printf("In file %s:%d:%s: Error opening the Y channel for writing\n",__FILE__,__LINE__,__FUNCTION__); exit(0); }
 	fp_cb = fopen(cb_filename, "w+");
@@ -59,7 +62,7 @@ void rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_
 		t_cb = -0.159 * r - 0.332 * g + 0.050 * b;
 		t_cr =  0.500 * r - 0.419 * g - 0.081 * b;
 
-		y  = (int) t_y;	y -= 128;	//level shift down the y component. This makes it symmetrical around 0 and thus in the range [-128,127]. This is good for DCT since cosine goes from -1 to 1
+		y  = (int) t_y;	y -= 128; //level shift down the y component. This makes it symmetrical around 0 and thus in the range [-128,127]. This is good for DCT since cosine goes from -1 to 1
 		cb = (int) t_cb;	//Already in the range [-128, 127]
 		cr = (int) t_cr;	//Already in the range [-128, 127]
 
