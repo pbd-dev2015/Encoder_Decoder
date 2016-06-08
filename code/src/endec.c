@@ -142,7 +142,10 @@ int main(int argc, char** argv)
 	strcpy(pEndecParams->Y_filename, y_fn);	//copy the name of the file containing Y data.
 	if(pEndecParams->subsampling != YUV444)
 	{
-		subsampleCbCr(cb_fn, cr_fn, pEndecParams);
+		if(-1 == subsampleCbCr(cb_fn, cr_fn, pEndecParams))
+		{
+			goto cleanup_files;
+		}
 	}
 	else
 	{

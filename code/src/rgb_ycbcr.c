@@ -111,6 +111,7 @@ int rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_f
  */
 int subsampleCbCr(const char* cb_filename, const char* cr_filename, struct endec_params* pEndecParams)
 {
+	int retval = -1;
 	//Set the correct filenames in pEndecParams
 	strcpy(pEndecParams->subsampledCb_filename, cb_filename);
 	strcpy(pEndecParams->subsampledCr_filename, cr_filename);
@@ -248,11 +249,12 @@ int subsampleCbCr(const char* cb_filename, const char* cr_filename, struct endec
 		}
 	}
 
+	retval = 0;
 	fclose(fp_cb_2);
 	fclose(fp_cr_2);
 	fclose(fp_cr_subsampled);
 	l4: fclose(fp_cb_subsampled);
 	l3: fclose(fp_cr);
 	l2: fclose(fp_cb);
-	l1: return -1;
+	l1: return retval;
 }
