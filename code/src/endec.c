@@ -5,8 +5,13 @@
 #include "endec_params.h"
 #include "rgb_ycbcr.h"
 #include "errno.h"
+#include "jpeg.h"
 
 //at the moment, use it like this. bin/endec -i lena.256x256
+
+//declarations
+//Forward DCT, quantization, entropy_encoding of all 8x8 sized macroblocks.
+void process_macroblocks(struct endec_params *pEndecParams);
 
 void help_and_usage()
 {
@@ -154,6 +159,9 @@ int main(int argc, char** argv)
 		strcpy(pEndecParams->subsampledCb_filename, cb_fn);
 		strcpy(pEndecParams->subsampledCr_filename, cr_fn);
 	}
+
+	//Forward DCT, quantization, entropy_encoding of all 8x8 sized macroblocks.
+	jpeg_encode(pEndecParams);
 
 cleanup_files:
 	remove(pEndecParams->subsampledCb_filename);

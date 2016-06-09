@@ -13,6 +13,8 @@ CFLAGS = -g -Wall -I$(INCDIR)
 
 LINKER = $(CC) -o
 
+LIBS = -lm
+
 SOURCES	:= $(wildcard $(SRCDIR)/*.c)
 INCLUDES	:= $(wildcard $(INCDIR)/*.h)
 OBJECTS	:= $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
@@ -26,7 +28,7 @@ RM	= rm -rf
 # program: program.o mylib.o	=> $(OBJECTS)
 #	gcc -o program program.o mylib.o	=> $@ is $(BINDIR)/$(TARGET) which is endec. In the example, it is program.
 $(BINDIR)/$(TARGET): $(OBJECTS)
-	@$(LINKER) $@ $(OBJECTS)
+	@$(LINKER) $@ $(OBJECTS) $(LIBS)
 	@echo "Linking Complete."
 
 #$<: the name of the prerequisite of the rule
