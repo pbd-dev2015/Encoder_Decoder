@@ -250,8 +250,11 @@ int subsampleCbCr(const char* cb_filename, const char* cr_filename, struct endec
 	}
 
 	retval = 0;
-	fclose(fp_cb_2);
-	fclose(fp_cr_2);
+	if(YUV420 == pEndecParams->subsampling)
+	{
+		fclose(fp_cr_2);
+		fclose(fp_cb_2);
+	}
 	fclose(fp_cr_subsampled);
 	l4: fclose(fp_cb_subsampled);
 	l3: fclose(fp_cr);
