@@ -22,7 +22,7 @@ int read_valid_data(FILE *fp, int width, int height, int macroblock_row_num, int
 int read_macroblock(FILE *fp, int width, int height, int macroblock_row_num, int macroblock_col_num, int macroblock[][8])
 {
 	//find row and column number of macroblock.
-	//then use row and column numbers with actual width and height to read data.
+	//then use row and column numbers with actual width and height to read data using read_valid_data().
 	int retval = 0;
 	if(NULL == fp)
 	{

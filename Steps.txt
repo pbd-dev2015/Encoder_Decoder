@@ -8,4 +8,4 @@ Steps for Encoder
       c. Run length coding of DCT coefficient (intermediate form)
       d. Variable Length Integer code
 4) Putting encoded data into JPEG format
-      a. Steps for this?
+      a. Non-interleaved Sequential components (see ITU-T81 - 4.8 Multiple Component Control)

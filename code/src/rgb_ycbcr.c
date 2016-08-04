@@ -93,8 +93,13 @@ int rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_f
  * 1. https://en.wikipedia.org/wiki/Chroma_subsampling
  * 2. http://dougkerr.net/pumpkin/articles/Subsampling.pdf : Chrominance Subsampling in Digital Images - Douglas Kerr - Best
  * 3. http://www.poynton.com/PDFs/Chroma_subsampling_notation.pdf : Chroma Subsampling Notation - Charles Poynton
+ * 
+ * The sampling notation is J:a:b. J is usually 4. a denotes how many chroma subsamples horizontally for every J luma samples
+ * b is either same as a or 0. When it is same as a, then it means there is no vertical subsampling. Which means chroma samples
+ * from every row are used and there is 1:1 vertical subsampling. When it is 0, it means there is 2:1 vertical subsampling.
+ * Which means for every two chroma samples vertically, only 1 is subsampled/picked. See Poynton's paper.
  * Important point to take away: In JPEG 420, there is centered alignment of (implied) chrominance pixel. The chrominance
- * pixel embrances a number of actual image pixels and thus is average of several chroma samples as per 2 - Douglas Kerr. 
+ * pixel embraces a number of actual image pixels and thus is average of several chroma samples as per 2 - Douglas Kerr. 
  * The center of the chroma pixel doesn't spatially coincide with any original chroma sample.
  * In MPEG2 420, there is cosited alignment of (implied) chrominance pixel which means that the chrominance pixel coincides 
  * with one original chroma sample. I am not sure if this means average of chroma values is not taken. 
@@ -249,6 +254,21 @@ int subsampleCbCr(const char* cb_filename, const char* cr_filename, struct endec
 		}
 	}
 
+	if(YUV444 == pEndecParams->subsampling)
+	{
+		pEndecParams->width_subsampledchroma = pEndecParams->width;
+		pEndecParams->height_subsampledchroma = pEndecParams->height;
+	}
+	else if (YUV422 == pEndecParams->subsampling)
+	{
+		pEndecParams->width_subsampledchroma =  ( pEndecParams->width / 2) + (pEndecParams->width % 2); 
+		pEndecParams->height_subsampledchroma = pEndecParams->height;
+	}
+	else if (YUV420 == pEndecParams->subsampling)
+	{
+		pEndecParams->width_subsampledchroma = ( pEndecParams->width / 2) + (pEndecParams->width % 2); 
+		pEndecParams->height_subsampledchroma = ( pEndecParams->height / 2) + (pEndecParams->height % 2);
+	}
 	retval = 0;
 	if(YUV420 == pEndecParams->subsampling)
 	{

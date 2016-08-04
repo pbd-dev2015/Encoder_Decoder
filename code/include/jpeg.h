@@ -10,6 +10,6 @@
 int jpeg_encode(struct endec_params *pEndecParams);
 
 //Handles Forward Discrete Cosine Transform which is used during encoding JPEG.
-int jpeg_forward_dct(struct endec_params *pEndecParams);
+void jpeg_forward_dct(int macroblock [][8], int fdct[][8]);
 
 #endif
