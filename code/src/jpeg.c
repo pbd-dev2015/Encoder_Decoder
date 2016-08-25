@@ -42,6 +42,171 @@ static int QTableDerived_Chrominance[8][8];
 void generate_quantization_table(int Q);
 void quantize_fdct(int fdct[][8], int QTable[][8]);
 
+int jpeg_encode_interleaved(struct endec_params *pEndecParams)
+{
+	int retval = 0;
+
+	generate_costable();	//this will generate the costable used to lookup cos values used in the DCT equation
+	generate_quantization_table(pEndecParams->qualityFactorQ);
+
+	FILE *fp_y = NULL;
+	fp_y = fopen(pEndecParams->Y_filename, "r");
+	if(NULL == fp_y)
+	{
+		fprintf(stderr, "%s:%d:%s: Error opening Y file for reading macroblock\n", __FILE__,__LINE__,__FUNCTION__);
+		retval = -1;
+		goto l1;
+	}
+
+	FILE *fp_cb = NULL;
+	fp_cb = fopen(pEndecParams->subsampledCb_filename, "r");
+	if(NULL == fp_cb)
+	{
+		fprintf(stderr, "%s:%d:%s: Error opening Cb file for reading macroblock\n", __FILE__,__LINE__,__FUNCTION__);
+		retval = -1;
+		goto l2;
+	}
+
+	FILE *fp_cr = NULL;
+	fp_cr = fopen(pEndecParams->subsampledCr_filename, "r");
+	if(NULL == fp_cr)
+	{
+		fprintf(stderr, "%s:%d:%s: Error opening Cr file for reading macroblock\n", __FILE__,__LINE__,__FUNCTION__);
+		retval = -1;
+		goto l3;
+	}
+
+	/* Since this is interleaved encoding of luminance and chrominance AC and DC coefficients, we will have to determine
+	 * which macroblocks should be interleaved together. That is, we find out which Y macroblocks are associated with
+	 * a specific Cb(and Cr) macroblock. HxV define the macroblocks that are associated with one chroma.
+	 * See Figure 13 – Interleaved order for components with different dimensions in ITU-T81.
+	 *
+	 * For example, if H = 2 and V = 2 as in case of YUV420, then macroblock_Y[0][0],macroblock_Y[0][1], macroblock_Y[1][0]
+	 * and macroblock_Y[1][1] are associated with macroblock_Cb[0][0] and macroblock_Cr[0][0]. Hence the coefficient
+	 * interleaving is done as follows: DC+AC coefficients of macroblock_Y[0][0],macroblock_Y[0][1], macroblock_Y[1][0]
+	 * and macroblock_Y[1][1] and then DC+AC coefficients of macroblock_Cb[0][0] and DC+AC coefficients of
+	 * macroblock_Cr[0][0].
+	 *
+	 * For 444, it will be macroblockY 0,0 for Cb and Cr 0,0.
+	 * For 422, it will be macroblockY 0,0 and 0,1 for Cb and Cr 0,0.
+	 * Also see https://books.google.com/books?id=AepB_PZ_WMkC&pg=PA101&lpg=PA101&dq=jpeg+mcu+interleaved&source=bl&ots=URJL8w5TtH&sig=XuZvFYvamTpKrxA0rGEwbfYUErA&hl=en&sa=X&ved=0ahUKEwjZ6bmFrtrOAhXLQyYKHeRkCeoQ6AEIHDAA#v=onepage&q=jpeg%20mcu%20interleaved&f=false
+	 */
+
+	//H goes to the right and V goes down. They denote the dimensions of the array which contains macroblocks.
+	int H = 0, V = 0;
+
+	switch (pEndecParams->subsampling)
+	{
+		case YUV444:
+		H = 1;
+		V = 1;
+		break;
+
+		case YUV422:
+		H = 2;
+		V = 1;
+		break;
+
+		case YUV420:
+		H = 2;
+		V = 2;
+		break;
+
+		case YUV_undefined:
+		goto l3;
+		break;
+	}
+
+	//find number of macroblocks "horizontally and vertically" or "per row and per column".
+	int num_macroblocks_horiz = 0, num_macroblocks_vert = 0;
+	num_macroblocks_horiz = (pEndecParams->width  % 8 == 0) ? (pEndecParams->width  / 8) : (pEndecParams->width  / 8 + 1);
+	num_macroblocks_vert  = (pEndecParams->height % 8 == 0) ? (pEndecParams->height / 8) : (pEndecParams->height / 8 + 1);
+
+	/* we use a 2D array for the 8x8 macroblocks just so that if we need to interleave Y and chroma in funny ways,
+	 * then this is handy. Otherwise just one 8x8 macroblock is enough.
+	 */
+
+	//row and col are defined over the whole image (complete macroblock grid)
+	int macroblock_y[2][2][8][8], fdct_y[2][2][8][8], row = 0, col = 0;
+	//macblockindex_row and macblockindex_col are defined over every HxV array of macroblocks.
+	int macblockindex_row = 0, macblockindex_col = 0;
+	int macroblock_cb[8][8], macroblock_cr[8][8], fdct_cb[8][8], fdct_cr[8][8];
+
+	for(row = 0; row < num_macroblocks_vert; row+=V)
+	{
+		for(col = 0; col < num_macroblocks_horiz; col+=H)
+		{
+			//First let us work on Y.
+			for(macblockindex_row = 0; macblockindex_row < V; macblockindex_row++)
+			{
+				for(macblockindex_col = 0; macblockindex_col < H; macblockindex_col++)
+				{
+						//read the macroblock
+						retval = read_macroblock( fp_y, pEndecParams->width, pEndecParams->height,
+									  row + macblockindex_row, col + macblockindex_col,
+									  macroblock_y[macblockindex_row][macblockindex_col]
+									);
+						if ( -1 == retval)
+						{
+							goto l2;
+						}
+
+						//take the forward dct of the macroblock and store it in 2d array fdct
+						jpeg_forward_dct( macroblock_y[macblockindex_row][macblockindex_col],
+								  fdct_y[macblockindex_row][macblockindex_col]
+								);
+
+						//Quantize the DCT output
+						quantize_fdct( fdct_y[macblockindex_row][macblockindex_col],
+							       QTableDerived_Luminance
+							     );
+				}
+			}
+
+			//now handle Cb
+			//read the Cb macroblock
+			retval = read_macroblock( fp_cb,
+						  pEndecParams->width_subsampledchroma, pEndecParams->height_subsampledchroma,
+						  row / V, col / H, //the index of the macroblock we want to read
+						  macroblock_cb
+						);
+			if ( -1 == retval)
+			{
+				goto l4;
+			}
+
+			//take the forward dct of the Cb macroblock and store it in 2d array fdct_cb
+			jpeg_forward_dct(macroblock_cb, fdct_cb);
+
+			//Quantize the DCT output
+			quantize_fdct(fdct_cb, QTableDerived_Chrominance);
+
+			//now handle Cr
+			//read the Cr macroblock
+			retval = read_macroblock( fp_cr,
+						  pEndecParams->width_subsampledchroma, pEndecParams->height_subsampledchroma,
+						  row / V, col / H, //the index of the macroblock we want to read
+						  macroblock_cr
+						);
+			if ( -1 == retval)
+			{
+				goto l4;
+			}
+
+			//take the forward dct of the Cr macroblock and store it in 2d array fdct_cr
+			jpeg_forward_dct(macroblock_cr, fdct_cr);
+
+			//Quantize the DCT output
+			quantize_fdct(fdct_cr, QTableDerived_Chrominance);
+		}
+	}
+
+	l4: fclose(fp_cr);
+	l3: fclose(fp_cb);
+	l2: fclose(fp_y);
+	l1: return retval;
+}
+
 //Forward DCT, quantization, entropy_encoding of all 8x8 sized macroblocks.
 int jpeg_encode(struct endec_params *pEndecParams)
 {
@@ -59,12 +224,12 @@ int jpeg_encode(struct endec_params *pEndecParams)
 	int retval = 0;
 	//find number of macroblocks "horizontally and vertically" or "per row and per column".
 	int num_macroblocks_horiz = 0, num_macroblocks_vert = 0;
-	FILE *fp = NULL;
+	FILE *fp_y = NULL;
 	//First let us work on Y.
 	num_macroblocks_horiz = (pEndecParams->width  % 8 == 0) ? (pEndecParams->width  / 8) : (pEndecParams->width  / 8 + 1);
 	num_macroblocks_vert  = (pEndecParams->height % 8 == 0) ? (pEndecParams->height / 8) : (pEndecParams->height / 8 + 1);
-	fp = fopen(pEndecParams->Y_filename, "r");
-	if(NULL == fp)
+	fp_y = fopen(pEndecParams->Y_filename, "r");
+	if(NULL == fp_y)
 	{
 		fprintf(stderr, "%s:%d:%s: Error opening Y file for reading macroblock\n", __FILE__,__LINE__,__FUNCTION__);
 		retval = -1;
@@ -80,7 +245,7 @@ int jpeg_encode(struct endec_params *pEndecParams)
 		for(col = 0; col < num_macroblocks_horiz; col++)
 		{
 			//read the macroblock
-			retval = read_macroblock(fp, pEndecParams->width, pEndecParams->height, row, col, macroblock);
+			retval = read_macroblock(fp_y, pEndecParams->width, pEndecParams->height, row, col, macroblock);
 			if ( -1 == retval)
 			{
 				goto l2;
@@ -130,7 +295,7 @@ int jpeg_encode(struct endec_params *pEndecParams)
 			jpeg_forward_dct(macroblock_cb, fdct_cb);
 
 			//Quantize the DCT output
-			quantize_fdct(fdct_cr, QTableDerived_Chrominance);
+			quantize_fdct(fdct_cb, QTableDerived_Chrominance);
 
 			//read the Cr macroblock
 			retval = read_macroblock(fp_cr, pEndecParams->width_subsampledchroma, pEndecParams->height_subsampledchroma, row, col, macroblock_cr);
@@ -148,7 +313,7 @@ int jpeg_encode(struct endec_params *pEndecParams)
 	}
 	l4: fclose(fp_cr);
 	l3: fclose(fp_cb);
-	l2: fclose(fp);
+	l2: fclose(fp_y);
 	l1: return retval;
 }
 

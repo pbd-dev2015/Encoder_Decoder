@@ -58,10 +58,11 @@ int rgb_to_ycbcr(const char* r_filename, const char* g_filename, const char* b_f
 		fread(&g, 1, 1, fp_grn);
 		fread(&b, 1, 1, fp_blu);
 
-		//RGB to YCbCr conversion : https://msdn.microsoft.com/en-us/library/ff635643.aspx
-		t_y  =  0.299 * r + 0.587 * g + 0.144 * b;
-		t_cb = -0.159 * r - 0.332 * g + 0.050 * b;
-		t_cr =  0.500 * r - 0.419 * g - 0.081 * b;
+		//RGB to YCbCr conversion : https://msdn.microsoft.com/en-us/library/ff635643.aspx and
+		//https://www.cl.cam.ac.uk/teaching/1011/R08/jpeg/acs10-jpeg.pdf page 3
+		t_y  =  0.299  * r + 0.587  * g + 0.144  * b;
+		t_cb = -0.1687 * r - 0.3313 * g + 0.050  * b;
+		t_cr =  0.500  * r - 0.4187 * g - 0.0813 * b;
 
 		y  = (int) t_y;	y -= 128; //level shift down the y component. This makes it symmetrical around 0 and thus in the range [-128,127]. This is good for DCT since cosine goes from -1 to 1
 		cb = (int) t_cb;	//Already in the range [-128, 127]
