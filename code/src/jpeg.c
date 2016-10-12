@@ -1,46 +1,6 @@
 #include "jpeg.h"
-#include "math.h"
 #include "utils.h"
-
-/* we need this cos table according to the DCT and IDCT transform equations. Generating this table forehand makes it useful 
- * for all macroblocks and thus we avoid doing the same calculations again and again. The computations saved are huge since
- * a lot of math operations in floating point and cos() are used in the equation.
- * In this table, the first index is for the variable x(and y) and the second index is for u(and v).
- */
-static double cos_table[8][8];
-void generate_costable();
-static const double C_Table[8] = {M_SQRT1_2, 1 , 1, 1, 1, 1, 1, 1};	//M_SQRT1_2 = 1 / (square root of two) = sqrt(1/2)
-
-/* This is the IJG Standard Table for luminance. We use a quality factor to derive a quantization table QTableDerived_Luminance from this table*/
-static const int QTableBase_Luminance[8][8] = {
-	{16, 11, 10, 16,  24,  40,  51,  61},
-	{12, 12, 14, 19,  26,  58,  60,  55},
-	{14, 13, 16, 24,  40,  57,  69,  56},
-	{14, 17, 22, 29,  51,  87,  80,  62},
-	{18, 22, 37, 56,  68, 109, 103,  77},
-	{24, 35, 55, 64,  81, 104, 113,  92},
-	{49, 64, 78, 87, 103, 121, 120, 101},
-	{72, 92, 95, 98, 112, 100, 103,  99}
-};
-//this is the quantization table derived from QTableBase_Luminance (IJG Standard Table)
-static int QTableDerived_Luminance[8][8];
-
-/* This is the IJG Standard Table for luminance. We use a quality factor to derive a quantization table QTableDerived_Luminance from this table*/
-static const int QTableBase_Chrominance[8][8] = {
-	{17, 18, 24, 47, 99, 99, 99, 99},
-	{18, 21, 26, 66, 99, 99, 99, 99},
-	{24, 26, 56, 99, 99, 99, 99, 99},
-	{47, 66, 99, 99, 99, 99, 99, 99},
-	{99, 99, 99, 99, 99, 99, 99, 99},
-	{99, 99, 99, 99, 99, 99, 99, 99},
-	{99, 99, 99, 99, 99, 99, 99, 99},
-	{99, 99, 99, 99, 99, 99, 99, 99}
-};
-//this is the quantization table derived from QTableBase_Chrominance (IJG Standard Table)
-static int QTableDerived_Chrominance[8][8];
-
-void generate_quantization_table(int Q);
-void quantize_fdct(int fdct[][8], int QTable[][8]);
+#include "stdlib.h"
 
 int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 {
@@ -74,6 +34,16 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 		fprintf(stderr, "%s:%d:%s: Error opening Cr file for reading macroblock\n", __FILE__,__LINE__,__FUNCTION__);
 		retval = -1;
 		goto l3;
+	}
+
+	//this is the file we write the encoded data into.
+	FILE *fp_jpeg = NULL;
+	fp_jpeg = fopen(pEndecParams->outputname, "w");
+	if(NULL == fp_jpeg)
+	{
+		fprintf(stderr, "%s:%d:%s: Error opening file for writing data\n", __FILE__,__LINE__,__FUNCTION__);
+		retval = -1;
+		goto l4;
 	}
 
 	/* Since this is interleaved encoding of luminance and chrominance AC and DC coefficients, we will have to determine
@@ -113,7 +83,7 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 		break;
 
 		case YUV_undefined:
-		goto l3;
+		goto error_lbl;
 		break;
 	}
 
@@ -131,6 +101,9 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 	//macblockindex_row and macblockindex_col are defined over every HxV array of macroblocks.
 	int macblockindex_row = 0, macblockindex_col = 0;
 	int macroblock_cb[8][8], macroblock_cr[8][8], fdct_cb[8][8], fdct_cr[8][8];
+	int prev_Y_DC = 0, prev_Cb_DC = 0, prev_Cr_DC = 0;
+
+	WriteByteStruct wbs = {0x00, 8};	//write_byte = 0x00, write_bits_available = 8
 
 	for(row = 0; row < num_macroblocks_vert; row+=V)
 	{
@@ -148,7 +121,7 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 									);
 						if ( -1 == retval)
 						{
-							goto l2;
+							goto error_lbl;
 						}
 
 						//take the forward dct of the macroblock and store it in 2d array fdct
@@ -160,6 +133,14 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 						quantize_fdct( fdct_y[macblockindex_row][macblockindex_col],
 							       QTableDerived_Luminance
 							     );
+
+						//Write Coefficients of this Macroblock to file using the Huffman encoding.
+						encode_and_write_macroblock( fdct_y[macblockindex_row][macblockindex_col],
+									     0,	//shows it is a Y macroblock
+									     &prev_Y_DC,
+									     &wbs,	//WriteByteStruct
+									     fp_jpeg
+									   );
 				}
 			}
 
@@ -172,7 +153,7 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 						);
 			if ( -1 == retval)
 			{
-				goto l4;
+				goto error_lbl;
 			}
 
 			//take the forward dct of the Cb macroblock and store it in 2d array fdct_cb
@@ -190,7 +171,7 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 						);
 			if ( -1 == retval)
 			{
-				goto l4;
+				goto error_lbl;
 			}
 
 			//take the forward dct of the Cr macroblock and store it in 2d array fdct_cr
@@ -201,6 +182,8 @@ int jpeg_encode_interleaved(struct endec_params *pEndecParams)
 		}
 	}
 
+	error_lbl:
+	fclose(fp_jpeg);
 	l4: fclose(fp_cr);
 	l3: fclose(fp_cb);
 	l2: fclose(fp_y);
@@ -317,65 +300,8 @@ int jpeg_encode(struct endec_params *pEndecParams)
 	l1: return retval;
 }
 
-void generate_costable()
-{
-	//This table contains the cosine values that are used in the DCT and IDCT equations.
-	//this table is generated just once.
-	/* In this table, the first index is for the variable x(and y) and the second index is for u(and v).*/
-	int x = 0, u = 0;
-	double angle = 0;
 
-	for(x = 0; x < 8; x++)
-	{
-		for(u = 0; u < 8; u++)
-		{
-			angle = (2 * x + 1) * u * M_PI / 16;
-			cos_table[x][u] = cos(angle);
-		}
-	}
-}
-
-
-void generate_quantization_table(int Q)
-{
-	//Q is the quality factor. 1 <= Q <= 100.
-	// Q = 50 means that there is no quantization.
-	//http://dfrws.org/2008/proceedings/p21-kornblum_pres.pdf : See page 13.
-	//http://stackoverflow.com/a/29216609
-
-	int S = (Q < 50) ? (5000 / Q) : (200 - 2 * Q);
-
-	int i = 0 , j = 0;
-	for(i = 0; i < 8; i++)
-	{
-		for(j = 0; j < 8; j++)
-		{
-			QTableDerived_Luminance[i][j]   = (S * QTableBase_Luminance[i][j]   + 50) / 100;
-			QTableDerived_Chrominance[i][j] = (S * QTableBase_Chrominance[i][j] + 50) / 100;
-		}
-	}
-
-	/* Some explanation on the math involved. 
-	 * Tb = BaseTable. Ts = Derived Table.
-	 * There are two cases : Q < 50 and Q >=50
-	 * For Q < 50, the equation becomes Ts = 0.5 * { (100 * Tb / Q) + 1} = 50Tb/Q + 0.5
-	 * Thus, as Q decreases, Ts increases. Ts is the actual quantizing value (the number we divide macroblock value by).
-	 * Thus for low values of Q, we will be using greater divisors and hence there will be more compression.
-	 * For Q = 1, Ts = 50*Tb + 0.5		For Q = 49, Ts = Tb + 0.5
-	 *
-	 * For Q >= 50, the equation becomes Ts = Tb*(100-Q)/50  + 0.5
-	 * As Q increases towards 100, Ts decreases and hence compression reduces and quality increases.
-	 *
-	 * For Tb[0][0] = 16, we will calculate Ts[0][0] for different values of Q.
-	 * For Q =  1, Ts[0][0] = 800.5
-	 * For Q = 25, Ts[0][0] = 24.5
-	 * For Q = 50, Ts[0][0] = 16.5
-	 * For Q = 75, Ts[0][0] = 8.5
-	 * For Q = 90, Ts[0][0] = 3.7
-	 * For Q = 100, Ts[0][0] = 0.5
-	 */
-	return;
-}
+const double C_Table[8] = {M_SQRT1_2, 1 , 1, 1, 1, 1, 1, 1};	//M_SQRT1_2 = 1 / (square root of two) = sqrt(1/2)
 
 void jpeg_forward_dct(int macroblock [][8], int fdct[][8])
 {
@@ -415,3 +341,205 @@ void quantize_fdct(int fdct[][8], int QTable[][8])
 		}
 	}	
 }
+
+int encode_and_write_macroblock(int fdct[][8], int macroblock_type, int *prev_DC, WriteByteStruct *pWBS, FILE *fp)
+{
+	int retval = 0;
+
+	const Code_T *DC_Table;
+	const Code_T (*AC_Table)[11];
+	//macroblock_type = 0 =>  Y macroblock
+	//macroblock_type = 1 => Cb macroblock
+	//macroblock_type = 2 => Cr macroblock
+	if(0 == macroblock_type)
+	{
+		DC_Table = DC_Luminance_Size_Table_K3;
+		AC_Table = &AC_Luminance_Table_K5[0];
+	}
+	else
+	{
+		DC_Table = DC_Chrominance_Size_Table_K4;
+		AC_Table = &AC_Chrominance_Table_K6[0];
+	}
+
+	Code_T DC_Diff_sym1;
+	Code_T DC_Diff_sym2;
+	//sym1 = size_of_sym2	sym2 = amplitude (= current DC coeff - previous DC coeff)
+	//find the code for the DC_Diff which is symbol2. We find out symbol1 from the code of symbol2.
+	find_coefficient_code(fdct[0][0] - (*prev_DC), &DC_Diff_sym2);
+
+	//length of sym1. (which is not equal to length of sym2. length of sym2 is used as index into table)
+	DC_Diff_sym1.code_length = DC_Table[DC_Diff_sym2.code_length].code_length;
+	DC_Diff_sym1.code_word = DC_Table[DC_Diff_sym2.code_length].code_word;
+
+	write_coefficient_to_file(&DC_Diff_sym1, pWBS, fp);
+	if( DC_Diff_sym2.code_length != 0)
+	{
+		write_coefficient_to_file(&DC_Diff_sym2, pWBS, fp);
+	}
+	//else we don't write the symbol 2 for difference = 0. This is according to ITU_T81 F.1.2.1.1
+
+
+	//now for the zigzag AC coefficients.
+	//0,1	1,0
+	//2,0	1,1   0,2
+	//0,3	1,2   2,1   3,0
+	//4,0	3,1   2,2   1,3   0,4
+	//0,5	1,4   2,3   3,2   4,1   5,0
+	//6,0	5,1   4,2   3,3   2,4   1,5   0,6
+	//0,7	1,6   2,5   3,4   4,3   5,2   6,1   7,0
+
+	//7,1	6,2   5,3   4,4   3,5   2,6   1,7
+	//2,7   3,6   4,5   5,4   6,3   7,2
+	//7,3   6,4   5,5   4,6   3,7
+	//4,7   5,6   6,5   7,4
+	//7,5   6,6   5,7
+	//6,7   7,6
+	//7,7
+	enum {UP = -1, DOWN = 1};
+	int sum_indexes = 1;	//sum goes from 1 to 14.
+	int direction = DOWN;	//1 = down. -1 = up.
+	int starting_i = 0, i = 0, j = 0;
+	int runlength = 0;
+	Code_T AC_sym1;
+	Code_T AC_sym2;
+
+	for(sum_indexes = 1; sum_indexes <= 14; sum_indexes++)
+	{
+		i = starting_i;
+		while(1)
+		{
+			j = sum_indexes - i;
+			if( i < 0 || i > 7 || j < 0 || j > 7 )
+			{
+				if(-1 == i)
+					starting_i = 0;
+				else if ( 8 == i)
+					starting_i = 7;
+				else
+				{
+					if(UP == direction)
+						starting_i = i + 2;
+					else
+						starting_i = i;
+				}
+
+				direction = direction * (-1);	//reverse the direction.
+				break;
+			}
+
+			if(0 == fdct[i][j])
+			{
+				runlength++;
+			}
+			else
+			{
+				//find the code for the symbol2 (AMPLITUDE)
+				find_coefficient_code(fdct[i][j], &AC_sym2);
+				//find the code for the symbol1 (runlength,size)
+				AC_sym1.code_length = AC_Table[runlength][AC_Sym2.code_length].code_length;
+				AC_sym1.code_word   = AC_Table[runlength][AC_Sym2.code_length].code_word;
+
+				
+				write_coefficient_to_file(&AC_sym1, pWBS, fp);
+				write_coefficient_to_file(&AC_sym2, pWBS, fp);
+
+				//reset runlength
+				runlength = 0;
+			}
+
+			i += direction;
+		}
+	}
+
+	if(runlength != 0)
+	{
+		AC_sym1.code_length = AC_Table[0][0].code_length;
+		AC_sym1.code_word   = AC_Table[0][0].code_word;
+		write_coefficient_to_file(&AC_sym1, pWBS, fp);
+	}
+
+	return retval;
+}
+
+
+void find_coefficient_code(int num, Code_T *c)
+{
+	//we find the code using Table F.1 "Difference magnitude categories for DC coding" of ITU_T81. Applies to AC as well.
+	c->code_length = 0;
+	c->code_word = 0;
+
+	if(num == 0)
+	{
+		c->code_length = 0;
+		return;
+	}
+
+	c->code_length = 1;
+	int upper_limit = 2;
+	c->code_word = abs(num);
+	while(c->code_word >= upper_limit)
+	{
+		upper_limit *= 2;
+		c->code_length++;
+	}
+
+	//now generate the code_word in case of negative num. In case, of positive num, the codeword is num and hence return.
+	if(num < 0)
+	{
+		/* this is flipping the bits. This is 1's complement. This is not equal to taking the negative(-). 
+		 * Negative numbers are stored as two's complement.
+		*/
+		c->code_word = ~(c->code_word);
+
+		//Now we isolate just the  codeword by removing the extra MSB 1s (ones) that we got after flipping bits.
+		c->code_word &= ( (unsigned int)(pow(2, c->code_length)) - 1);
+	}
+}
+
+void write_coefficient_to_file(Code_T *c, WriteByteStruct *pWBS, FILE *fp)
+{
+	unsigned int tmp = 0, n = 0, count = 0;
+	int code_bits_remaining = 0;		//number of bits of sym1 code or sym2 that are still remaining to write
+	code_bits_remaining = c->code_length;
+	while(code_bits_remaining > 0)
+	{
+		if(code_bits_remaining <= pWBS->write_bits_available)
+		{
+			count = code_bits_remaining;
+		}
+		else
+		{
+			count = pWBS->write_bits_available;
+		}
+
+		//make room at lsb by shifting to the left
+		pWBS->write_byte = pWBS->write_byte << count;
+
+		//now create the right value that remains to be pushed.
+		n = (sizeof(unsigned int) * 8) - code_bits_remaining;
+		tmp = c->code_word << n;
+
+		/* Some explanation is in order here. 
+		 * For the case where code_bits_remaining <= write_bits_available, then the bracket part doesn't matter.
+		 * For the else case, we need to shift more to the right because remaining code bits don't fit into write_byte.
+		 * The extra shifting to the right gives us only "count" number of MSB of the remaining code.
+		*/
+		tmp = tmp >> (n + (code_bits_remaining - count)); 
+		tmp = tmp & 0xFF; //now tmp contains the code bits at lsb that need to be pushed.
+		
+		pWBS->write_byte = pWBS->write_byte | tmp;	//now we have pushed the code bits.
+		
+		code_bits_remaining -= count;
+		pWBS->write_bits_available -= count;
+
+		if(0 == pWBS->write_bits_available)
+		{
+			//TODO: Stuff byte. 0x00 after 0xFF
+			fwrite(&(pWBS->write_byte), 1, 1, fp);
+			pWBS->write_byte = 0;
+			pWBS->write_bits_available = 8;
+		}
+	}
+}
+

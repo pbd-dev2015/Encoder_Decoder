@@ -181,6 +181,9 @@ int main(int argc, char** argv)
 		strcpy(pEndecParams->subsampledCr_filename, cr_fn);
 	}
 
+	//create the name of the output jpeg file.
+	strcpy(pEndecParams->outputname,  pEndecParams->inputname);   strcat(y_fn, ".jpg");
+
 	//Forward DCT, quantization, entropy_encoding of all 8x8 sized macroblocks.
 	jpeg_encode(pEndecParams);
 

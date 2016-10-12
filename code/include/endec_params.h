@@ -24,6 +24,7 @@ struct endec_params{
 	char Y_filename[FILENAMELEN];	//name of file containing Y data
 	char subsampledCb_filename[FILENAMELEN];	//name of file containing subsampled Cb data.
 	char subsampledCr_filename[FILENAMELEN];	//name of file containing subsampled Cr data.
+	char outputname[FILENAMELEN];	//name of the jpeg file we create while encoding.
 };
 
 #endif
